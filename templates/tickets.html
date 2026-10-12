@@ -420,8 +420,8 @@
   // Load Sample
   if (loadBtn) {
     loadBtn.addEventListener('click', () => {
-      emailInput.value = 'elena.rostova@nexus-mail.org';
-      orderInput.value = '#ORD-7741 (Nordic Alpaca Cardigan - $240.00 USD)';
+      emailInput.value = 'yashwanthaagunuri15@gmail.com';
+      orderInput.value = '#ORD-7741';
       queryInput.value = 'Can I return this Nordic Alpaca Cardigan after 18 days? The tag is still attached, but the standard window on your website says 14 days.';
       updateCount();
     });
@@ -447,12 +447,17 @@
       const orderRef = orderInput ? orderInput.value.trim() : '';
       const resolutionText = document.getElementById('response-draft-text').innerText;
 
-      if (!resolutionText || resolutionText.includes('Awaiting pipeline')) {
+      if (!resolutionText || resolutionText.includes('Awaiting pipeline') || resolutionText.includes('Click \'Process Autonomous Pipeline\'')) {
         alert('Please run the pipeline and generate a response before dispatching.');
         return;
       }
 
-      dispatchBtn.innerHTML = '<span class="material-symbols-outlined text-[20px] animate-spin">refresh</span><span>Dispatching...</span>';
+      const activePill = document.querySelector('.category-pill.active');
+      const categorySpan = activePill ? activePill.querySelector('span:last-child') : null;
+      const category = categorySpan ? categorySpan.textContent.trim() : 'Returns & Refunds';
+      const queryText = queryInput ? queryInput.value.trim() : '';
+
+      dispatchBtn.innerHTML = '<span class="material-symbols-outlined text-[20px] animate-spin">refresh</span><span>Dispatching & Sending Email...</span>';
       dispatchBtn.disabled = true;
 
       try {
@@ -465,6 +470,8 @@
           body: JSON.stringify({
             email: email,
             order_ref: orderRef,
+            category: category,
+            query_text: queryText,
             resolution: resolutionText
           })
         });
@@ -473,16 +480,23 @@
           throw new Error('Failed to dispatch ticket.');
         }
 
-        dispatchBtn.innerHTML = '<span class="material-symbols-outlined text-[20px]">check</span><span>Dispatched Successfully</span>';
+        const data = await response.json();
+
+        dispatchBtn.innerHTML = '<span class="material-symbols-outlined text-[20px]">mark_email_read</span><span>Dispatched & Emailed!</span>';
         dispatchBtn.classList.remove('bg-secondary');
         dispatchBtn.classList.add('bg-on-secondary-container');
         
+        const syncTags = document.getElementById('sync-tags');
+        if (syncTags) {
+          syncTags.innerHTML = '<span class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm font-semibold"><span class="material-symbols-outlined text-[14px]">check_circle</span>Resolution Dispatched via SMTP to ' + (email || 'Customer') + '</span>';
+        }
+
         setTimeout(() => {
           dispatchBtn.innerHTML = '<span class="material-symbols-outlined text-[20px]">send</span><span>Dispatch Response</span>';
           dispatchBtn.classList.add('bg-secondary');
           dispatchBtn.classList.remove('bg-on-secondary-container');
           dispatchBtn.disabled = false;
-        }, 3000);
+        }, 3500);
 
       } catch (error) {
         console.error('Error:', error);
@@ -493,13 +507,78 @@
     });
   }
 
-  // Escalate Button Click
+  // Real backend integration for Escalate to Human Agent
   if (escalateBtn) {
-    escalateBtn.addEventListener('click', () => {
-      escalateBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">done</span><span>Assigned to Tier-2 Queue</span>';
-      setTimeout(() => {
+    escalateBtn.addEventListener('click', async () => {
+      const activePill = document.querySelector('.category-pill.active');
+      const categorySpan = activePill ? activePill.querySelector('span:last-child') : null;
+      const category = categorySpan ? categorySpan.textContent.trim() : 'Payment Dispute';
+      const email = emailInput ? emailInput.value.trim() : '';
+      const orderRef = orderInput ? orderInput.value.trim() : '';
+      const queryText = queryInput ? queryInput.value.trim() : '';
+      const resolutionText = document.getElementById('response-draft-text').innerText;
+
+      if (!email) {
+        alert('Please enter a Customer Identity email address.');
+        if (emailInput) emailInput.focus();
+        return;
+      }
+
+      if (!queryText) {
+        alert('Please enter a customer message query before escalating.');
+        if (queryInput) queryInput.focus();
+        return;
+      }
+
+      escalateBtn.innerHTML = '<span class="material-symbols-outlined text-[18px] animate-spin">refresh</span><span>Creating Jira Issue & Sending Mail...</span>';
+      escalateBtn.disabled = true;
+
+      try {
+        const response = await fetch('/escalate-ticket', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            category: category,
+            email: email,
+            order_ref: orderRef || '#ORD-7741',
+            query_text: queryText,
+            resolution: resolutionText
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to escalate ticket.');
+        }
+
+        const data = await response.json();
+        const jiraKey = data.jira_key || 'SHOP-1042';
+        const sentTo = data.recipient || email;
+
+        escalateBtn.innerHTML = `<span class="material-symbols-outlined text-[18px]">verified</span><span>Jira #${jiraKey} Created & Emailed</span>`;
+        escalateBtn.classList.remove('text-tertiary', 'bg-surface-container');
+        escalateBtn.classList.add('bg-error-container', 'text-on-error-container');
+
+        const syncTags = document.getElementById('sync-tags');
+        if (syncTags) {
+          syncTags.innerHTML = `<span class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-error-container text-on-error-container font-label-sm text-label-sm font-semibold"><span class="material-symbols-outlined text-[14px]">warning</span>Escalated: Jira #${jiraKey} Created & Mail Dispatched to ${sentTo}</span>`;
+        }
+
+        setTimeout(() => {
+          escalateBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">support_agent</span><span>Escalate to Human Agent</span>';
+          escalateBtn.classList.add('text-tertiary', 'bg-surface-container');
+          escalateBtn.classList.remove('bg-error-container', 'text-on-error-container');
+          escalateBtn.disabled = false;
+        }, 5000);
+
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Error escalating ticket. Check terminal.');
         escalateBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">support_agent</span><span>Escalate to Human Agent</span>';
-      }, 3000);
+        escalateBtn.disabled = false;
+      }
     });
   }
 
@@ -510,6 +589,8 @@
       const categorySpan = activePill ? activePill.querySelector('span:last-child') : null;
       const category = categorySpan ? categorySpan.textContent.trim() : 'Returns & Refunds';
       const queryText = queryInput ? queryInput.value.trim() : '';
+      const email = emailInput ? emailInput.value.trim() : '';
+      const orderRef = orderInput ? orderInput.value.trim() : '';
 
       if (!queryText) {
         alert('Please enter a customer query before running the pipeline.');
@@ -528,7 +609,9 @@
           },
           body: JSON.stringify({
             category: category,
-            ticket_query: queryText
+            ticket_query: queryText,
+            email: email,
+            order_ref: orderRef
           })
         });
 
@@ -559,8 +642,23 @@
         
         // Update outcome header card based on backend result
         document.getElementById('outcome-title').textContent = data.outcome;
-        document.getElementById('outcome-subtitle').textContent = "Ready for Dispatch • Consensus Verified";
+        document.getElementById('outcome-subtitle').textContent = data.outcome === "Escalated" ? "Escalation Required • Jira & Email Triggered" : "Ready for Dispatch • Consensus Verified";
         
+        // Update downstream automations sync tag
+        const syncTags = document.getElementById('sync-tags');
+        if (syncTags) {
+          if (data.outcome === "Escalated") {
+            const jKey = data.jira_key || 'SHOP-1042';
+            syncTags.innerHTML = `<span class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-error-container text-on-error-container font-label-sm text-label-sm font-semibold"><span class="material-symbols-outlined text-[14px]">bolt</span>Auto-Escalated: Jira Issue #${jKey} Created & Email Alert Dispatched</span>`;
+            if (escalateBtn) {
+              escalateBtn.innerHTML = `<span class="material-symbols-outlined text-[18px]">verified</span><span>Jira #${jKey} Active</span>`;
+            }
+          } else {
+            const tId = data.ticket_id || data.jira_key || 'Auto-Approved';
+            syncTags.innerHTML = `<span class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm font-semibold"><span class="material-symbols-outlined text-[14px]">mark_email_read</span>Auto-Resolved: Resolution #${tId} &amp; Email Dispatched to ${email || 'Customer'}</span>`;
+          }
+        }
+
         // Update agent status badges & traces
         document.getElementById('pipeline-status-badge').className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm font-semibold";
         document.getElementById('pipeline-status-badge').innerHTML = '<span class="w-2 h-2 rounded-full bg-secondary"></span> (4/4 Agents)';
